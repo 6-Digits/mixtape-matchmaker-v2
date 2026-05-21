@@ -43,9 +43,11 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, onChat, onLike, onOpenPlay
         <Button size="small" sx={{ flex: '1 1 100px' }} variant="outlined" onClick={() => onOpenPlaylist?.(match)}>
           Playlist
         </Button>
-        <Button size="small" variant={match.status === 'liked' ? 'contained' : 'outlined'} onClick={() => onLike?.(match.id)}>
-          {match.status === 'liked' ? 'Liked' : 'Like'}
-        </Button>
+        {onLike && (
+          <Button size="small" variant="outlined" onClick={() => onLike(match.id)}>
+            Like back
+          </Button>
+        )}
         <Button size="small" color="error" variant="outlined" onClick={() => onUnmatch?.(match.id)}>
           Unmatch
         </Button>

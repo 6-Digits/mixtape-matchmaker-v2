@@ -14,7 +14,6 @@ import {
   ListItemButton,
   ListItemText,
   Popover,
-  Slider,
   Snackbar,
   Toolbar,
   Tooltip,
@@ -30,34 +29,23 @@ import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
-import MusicNoteRoundedIcon from '@mui/icons-material/MusicNoteRounded';
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
-import PauseRoundedIcon from '@mui/icons-material/PauseRounded';
-import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
-import SkipNextRoundedIcon from '@mui/icons-material/SkipNextRounded';
-import SkipPreviousRoundedIcon from '@mui/icons-material/SkipPreviousRounded';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import QueueMusicRoundedIcon from '@mui/icons-material/QueueMusicRounded';
 import StarsRoundedIcon from '@mui/icons-material/StarsRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
-import { useAppData, type AppNotification } from '../state/AppDataContext';
+import { useAppData } from '../state/AppDataContext';
+import NotificationsList from './layout/NotificationsList';
+import NowPlayingBar from './layout/NowPlayingBar';
 
 const navItems = [
   { label: 'Home', to: '/', icon: <HomeRoundedIcon /> },
-  { label: 'Playlists', to: '/playlists', icon: <QueueMusicRoundedIcon /> },
+  { label: 'Discover', to: '/discover', icon: <SearchRoundedIcon /> },
   { label: 'Matches', to: '/matches', icon: <FavoriteRoundedIcon /> },
   { label: 'Chat', to: '/chat', icon: <ChatBubbleRoundedIcon /> },
+  { label: 'Playlists', to: '/playlists', icon: <QueueMusicRoundedIcon /> },
 ];
-
-function formatTime(seconds: number) {
-  if (!isFinite(seconds) || seconds < 0) return '0:00';
-  const total = Math.floor(seconds);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 const Layout: React.FC = () => {
   const {
@@ -243,8 +231,8 @@ const Layout: React.FC = () => {
               Login
             </Button>
           ) : (
-            <Button variant="outlined" onClick={signOut} sx={{ gap: 1, px: 1 }}>
-              <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontWeight: 900 }}>
+            <Button variant="outlined" onClick={signOut} sx={{ gap: 1, px: 1, py: 0.4, minHeight: 38 }}>
+              <Avatar src={user?.image} sx={{ width: 30, height: 30, bgcolor: 'primary.main', fontWeight: 900 }}>
                 {user?.displayName?.[0] || 'M'}
               </Avatar>
               <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
@@ -320,7 +308,7 @@ const Layout: React.FC = () => {
       >
         <Box sx={{ width: 340, maxWidth: '90vw', p: 2 }}>
           <Typography variant="h6" sx={{ mb: 1 }}>Notifications</Typography>
-          <StackNotifications
+          <NotificationsList
             notifications={notifications}
             onClearAll={clearNotifications}
             onDismiss={dismissNotification}
@@ -340,87 +328,17 @@ const Layout: React.FC = () => {
       <Container component="main" maxWidth="xl" sx={{ py: { xs: 2, md: 3 }, flex: 1, width: '100%' }}>
         <Outlet />
       </Container>
-      {nowPlaying && (() => {
-        const current = nowPlaying.songs[nowPlaying.index];
-        const hasPrev = nowPlaying.index > 0;
-        const hasNext = nowPlaying.index < nowPlaying.songs.length - 1;
-        const duration = nowPlaying.duration || 0;
-        const position = Math.min(nowPlaying.position, duration || nowPlaying.position);
-        return (
-          <Box
-            sx={{
-              position: 'fixed',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: theme.zIndex.appBar - 1,
-              mx: 'auto',
-              width: 'min(100%, 960px)',
-              px: 2,
-              py: 1.2,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.5,
-              bgcolor: 'background.paper',
-              border: `1px solid ${theme.palette.divider}`,
-              borderBottom: 'none',
-              borderRadius: '12px 12px 0 0',
-              boxShadow: '0 -12px 32px rgba(0,0,0,0.18)',
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <MusicNoteRoundedIcon color="primary" />
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="body2" sx={{ fontWeight: 900 }} noWrap>
-                  {nowPlaying.loading ? 'Loading preview...' : current ? `${current.title} — ${current.artist}` : ''}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" noWrap>
-                  {nowPlaying.playlistTitle} · Track {nowPlaying.index + 1} of {nowPlaying.songs.length}
-                </Typography>
-              </Box>
-              <Tooltip title="Previous">
-                <span>
-                  <IconButton onClick={previousTrack} disabled={!hasPrev && position < 3}>
-                    <SkipPreviousRoundedIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Button variant="contained" onClick={togglePlayback} disabled={!nowPlaying.previewUrl || nowPlaying.loading} sx={{ minWidth: 48 }}>
-                {nowPlaying.playing ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
-              </Button>
-              <Tooltip title="Next">
-                <span>
-                  <IconButton onClick={nextTrack} disabled={!hasNext}>
-                    <SkipNextRoundedIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title="Close player">
-                <IconButton onClick={stopPlayback}>
-                  <CloseRoundedIcon />
-                </IconButton>
-              </Tooltip>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, px: 0.5 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36, textAlign: 'right' }}>
-                {formatTime(position)}
-              </Typography>
-              <Slider
-                size="small"
-                value={position}
-                min={0}
-                max={duration > 0 ? duration : 30}
-                step={0.1}
-                disabled={!nowPlaying.previewUrl || nowPlaying.loading || duration === 0}
-                onChange={(_, value) => seekTo(Array.isArray(value) ? value[0] : value)}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36 }}>
-                {formatTime(duration)}
-              </Typography>
-            </Box>
-          </Box>
-        );
-      })()}
+      {nowPlaying && (
+        <NowPlayingBar
+          nowPlaying={nowPlaying}
+          theme={theme}
+          onNext={nextTrack}
+          onPrevious={previousTrack}
+          onSeek={seekTo}
+          onStop={stopPlayback}
+          onToggle={togglePlayback}
+        />
+      )}
       <Box
         component="footer"
         sx={{
@@ -470,52 +388,6 @@ const Layout: React.FC = () => {
           </Typography>
         </Box>
       </Box>
-    </Box>
-  );
-};
-
-const StackNotifications: React.FC<{
-  notifications: AppNotification[];
-  onClearAll: () => void;
-  onDismiss: (notificationId: string) => void;
-  onOpen: (target: string) => void;
-}> = ({ notifications, onClearAll, onDismiss, onOpen }) => {
-  if (notifications.length === 0) {
-    return <Typography color="text.secondary">No notifications yet. Mock activity will appear here.</Typography>;
-  }
-
-  return (
-    <Box sx={{ display: 'grid', gap: 1 }}>
-      <Button size="small" variant="outlined" onClick={onClearAll}>
-        Clear all
-      </Button>
-      {notifications.map((notification) => (
-        <Box
-          key={notification.id}
-          sx={{
-            p: 1,
-            borderRadius: 1,
-            bgcolor: notification.read ? 'transparent' : 'action.hover',
-            display: 'grid',
-            gridTemplateColumns: '1fr auto',
-            gap: 1,
-          }}
-        >
-          <Box>
-            <Typography
-              variant="body2"
-              sx={{ fontWeight: 800, cursor: notification.target ? 'pointer' : 'default' }}
-              onClick={() => notification.target && onOpen(notification.target)}
-            >
-              {notification.message}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">{notification.time}</Typography>
-          </Box>
-          <Button size="small" onClick={() => onDismiss(notification.id)}>
-            Clear
-          </Button>
-        </Box>
-      ))}
     </Box>
   );
 };

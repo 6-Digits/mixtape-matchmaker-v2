@@ -1,367 +1,478 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Avatar,
+  Badge,
   Box,
   Button,
+  Chip,
   Divider,
   IconButton,
   InputBase,
   List,
-  ListItemButton,
   ListItemAvatar,
+  ListItemButton,
   ListItemText,
   Paper,
-  Popover,
   Stack,
+  TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
-import AddReactionRoundedIcon from '@mui/icons-material/AddReactionRounded';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import QueueMusicRoundedIcon from '@mui/icons-material/QueueMusicRounded';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../state/AppDataContext';
-import { useSearchParams } from 'react-router-dom';
-import type { ChatMessage } from '../data/demo';
+import MessageRow from '../components/chat/MessageRow';
+import TypingDots from '../components/chat/TypingDots';
+import type { ChatMessage, Match } from '../data/demo';
 
-const REACTIONS = ['❤️', '😂', '😍', '🔥', '👍', '😮', '😢'];
-const DEFAULT_REACTION = '❤️';
+function parseTimeToMinutes(time: string): number {
+  // "9:41 AM" → ordering integer for "today". Not a real timestamp, just for sorting.
+  const match = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!match) return 0;
+  let h = Number(match[1]);
+  const m = Number(match[2]);
+  const period = match[3]?.toUpperCase();
+  if (period === 'PM' && h < 12) h += 12;
+  if (period === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+function lastMessageFor(messages: ChatMessage[], matchId: string): ChatMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].matchId === matchId) return messages[i];
+  }
+  return undefined;
+}
 
 const Chat: React.FC = () => {
-  const { matches, messages, sendMessage, typingMatchId, reactToMessage } = useAppData();
+  const { mutualMatches, messages, sendMessage, typingMatchId, reactToMessage } = useAppData();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeMatchId, setActiveMatchId] = useState(searchParams.get('match') || matches[0]?.id);
+  const [selectedMatchId, setSelectedMatchId] = useState<string | undefined>();
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
-  const activeMatch = matches.find((match) => match.id === activeMatchId) || matches[0];
-  const activeMessages = messages.filter((message) => message.matchId === activeMatch?.id);
-  const visibleMatches = useMemo(() => (
-    matches.filter((match) => match.name.toLowerCase().includes(query.toLowerCase()) || match.playlist.toLowerCase().includes(query.toLowerCase()))
-  ), [matches, query]);
-
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
 
+  const urlMatchId = searchParams.get('match') || undefined;
+  const urlMatchIsValid = Boolean(urlMatchId && mutualMatches.some((m) => m.id === urlMatchId));
+  const activeMatchId = urlMatchIsValid ? urlMatchId : selectedMatchId;
+  const activeMatch = mutualMatches.find((m) => m.id === activeMatchId) || mutualMatches[0];
+  const activeMessages = useMemo(
+    () => messages.filter((m) => m.matchId === activeMatch?.id),
+    [messages, activeMatch?.id],
+  );
+
+  // Sort sidebar by most recent activity (last message time). Matches without messages float to top of the unstarted list.
+  const orderedMatches = useMemo(() => {
+    const decorated = mutualMatches.map((match) => {
+      const last = lastMessageFor(messages, match.id);
+      return {
+        match,
+        last,
+        rank: last ? parseTimeToMinutes(last.time) : -1,
+      };
+    });
+    decorated.sort((a, b) => b.rank - a.rank);
+    return decorated;
+  }, [mutualMatches, messages]);
+
+  const visibleMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return orderedMatches;
+    return orderedMatches.filter(({ match }) => (
+      match.name.toLowerCase().includes(q)
+      || match.playlist.toLowerCase().includes(q)
+    ));
+  }, [orderedMatches, query]);
+
+  // Group consecutive messages by sender for cleaner threading.
+  const grouped = useMemo(() => {
+    return activeMessages.map((m, i) => {
+      const prev = activeMessages[i - 1];
+      const next = activeMessages[i + 1];
+      const sameAsPrev = prev?.from === m.from;
+      const sameAsNext = next?.from === m.from;
+      const position: 'solo' | 'first' | 'middle' | 'last' = !sameAsPrev && !sameAsNext
+        ? 'solo'
+        : !sameAsPrev && sameAsNext
+        ? 'first'
+        : sameAsPrev && sameAsNext
+        ? 'middle'
+        : 'last';
+      return {
+        message: m,
+        position,
+        showAvatar: position === 'solo' || position === 'last',
+        showTimestamp: position === 'solo' || position === 'last',
+      };
+    });
+  }, [activeMessages]);
+
   const handleSend = () => {
-    sendMessage(draft, activeMatch?.id);
+    const body = draft.trim();
+    if (!body) return;
+    sendMessage(body, activeMatch?.id);
     setDraft('');
   };
 
   useEffect(() => {
     const node = messageScrollRef.current;
     if (node) {
-      node.scrollTop = node.scrollHeight;
+      requestAnimationFrame(() => {
+        node.scrollTop = node.scrollHeight;
+      });
     }
   }, [activeMessages.length, typingMatchId, activeMatch?.id]);
 
+  if (mutualMatches.length === 0) {
+    return (
+      <Box>
+        <Typography variant="h3">Chat</Typography>
+        <Typography color="text.secondary" sx={{ mb: 2.5 }}>
+          Chat unlocks when you and another listener both like each other.
+        </Typography>
+        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 1 }}>
+          <Typography variant="h6" sx={{ mb: 1 }}>No conversations yet.</Typography>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            Head to Discover and like a few profiles. When someone likes you back, you'll be able to talk here.
+          </Typography>
+          <Button variant="contained" onClick={() => navigate('/discover')}>Open Discover</Button>
+        </Paper>
+      </Box>
+    );
+  }
+
   return (
     <Box>
-      <Typography variant="h3">Chat</Typography>
-      <Typography color="text.secondary" sx={{ mb: 2.5 }}>
-        Keep the conversation close to the music that started it.
-      </Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ justifyContent: 'space-between', alignItems: { sm: 'flex-end' }, mb: 2.5 }}>
+        <Box>
+          <Typography variant="h3">Chat</Typography>
+          <Typography color="text.secondary">
+            Keep the conversation close to the music that started it.
+          </Typography>
+        </Box>
+        <Chip
+          color="primary"
+          variant="outlined"
+          label={`${mutualMatches.length} match${mutualMatches.length === 1 ? '' : 'es'}`}
+          sx={{ fontWeight: 800, mt: { xs: 1.5, sm: 0 } }}
+        />
+      </Stack>
 
       <Paper
-        variant="outlined"
         sx={{
-          height: { xs: 'auto', md: 660 },
+          height: { xs: 'calc(100dvh - 156px)', md: 680 },
+          minHeight: { md: 680 },
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: '320px 1fr' },
+          gridTemplateRows: { xs: '196px minmax(0, 1fr)', md: '1fr' },
           overflow: 'hidden',
+          borderRadius: 1,
+          border: 1,
           borderColor: 'divider',
         }}
       >
-        <Box sx={{ borderRight: { md: 1 }, borderColor: { md: 'divider' }, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <Box sx={{ p: 2 }}>
-            <InputBase
-              fullWidth
-              placeholder="Search matches"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              sx={{ px: 1.5, py: 1, borderRadius: 2, bgcolor: 'action.hover' }}
-            />
+        {/* Sidebar */}
+        <Box
+          sx={{
+            borderRight: { md: 1 },
+            borderBottom: { xs: 1, md: 0 },
+            borderColor: 'divider',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+            bgcolor: 'background.paper',
+          }}
+        >
+          <Box sx={{ p: 1.5 }}>
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: 'center',
+                px: 1.2,
+                py: 0.6,
+                borderRadius: 1,
+                bgcolor: 'action.hover',
+              }}
+            >
+              <SearchRoundedIcon fontSize="small" sx={{ color: 'text.secondary', mr: 1 }} />
+              <InputBase
+                fullWidth
+                placeholder="Search matches"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                sx={{ fontSize: 14 }}
+              />
+            </Stack>
           </Box>
           <Divider />
-          <List disablePadding sx={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-            {visibleMatches.map((match) => (
-              <ListItemButton
+          <List
+            disablePadding
+            sx={{
+              overflowX: { xs: 'auto', md: 'hidden' },
+              overflowY: { xs: 'hidden', md: 'auto' },
+              flex: 1,
+              minHeight: 0,
+              display: { xs: 'grid', md: 'block' },
+              gridAutoFlow: { xs: 'column', md: 'row' },
+              gridAutoColumns: { xs: 'minmax(236px, 78vw)', md: 'auto' },
+              pb: { xs: 0.5, md: 0 },
+            }}
+          >
+            {visibleMatches.map(({ match, last }) => (
+              <SidebarItem
                 key={match.id}
-                selected={match.id === activeMatch?.id}
-                sx={{ py: 1.4 }}
-                onClick={() => {
-                  setActiveMatchId(match.id);
+                match={match}
+                lastMessage={last}
+                active={match.id === activeMatch?.id}
+                onSelect={() => {
+                  setSelectedMatchId(match.id);
                   setSearchParams({ match: match.id });
                 }}
-              >
-                <ListItemAvatar>
-                  <Avatar src={match.image} variant="rounded" />
-                </ListItemAvatar>
-                <ListItemText
-                  secondary={match.playlist}
-                  primary={<Typography sx={{ fontWeight: 900 }}>{match.name}</Typography>}
-                />
-              </ListItemButton>
+              />
             ))}
+            {visibleMatches.length === 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                No matches match your search.
+              </Typography>
+            )}
           </List>
         </Box>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: { md: '100%' } }}>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', p: 2 }}>
-            <Avatar src={activeMatch?.image} variant="rounded" />
-            <Box>
-              <Typography variant="h6">{activeMatch?.name || 'No match selected'}</Typography>
-              <Typography variant="body2" color="text.secondary">{activeMatch?.score || 0}% match from City Lights, Side B</Typography>
-            </Box>
-          </Stack>
-          <Divider />
+        {/* Conversation pane */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+          {/* Header */}
           <Stack
-            ref={messageScrollRef}
+            direction="row"
             spacing={1.5}
             sx={{
-              flex: 1,
-              p: 2.5,
-              minHeight: 0,
-              maxHeight: { xs: 420, md: 'unset' },
-              overflowY: 'auto',
-              bgcolor: 'action.hover',
+              alignItems: 'center',
+              p: 1.5,
+              borderBottom: 1,
+              borderColor: 'divider',
+              bgcolor: 'background.paper',
+              minWidth: 0,
             }}
           >
-            {typingMatchId && typingMatchId === activeMatch?.id && (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <Box
+            <Badge
+              overlap="circular"
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              variant="dot"
+              sx={{
+                '& .MuiBadge-dot': {
+                  bgcolor: 'success.main',
+                  border: 2,
+                  borderColor: 'background.paper',
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                },
+              }}
+            >
+              <Avatar src={activeMatch?.image} sx={{ width: 44, height: 44 }} />
+            </Badge>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.1 }} noWrap>
+                {activeMatch?.name || 'No match selected'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {activeMatch?.score ?? 0}% match · {activeMatch?.playlist || 'their playlist'}
+              </Typography>
+            </Box>
+            <Tooltip title="Open their playlist">
+              <span>
+                <IconButton
+                  onClick={() => activeMatch && navigate(`/playlists?q=${encodeURIComponent(activeMatch.playlist)}`)}
+                  disabled={!activeMatch}
+                  size="small"
                   sx={{
-                    px: 1.8,
-                    py: 1.2,
-                    borderRadius: 2,
-                    bgcolor: 'background.paper',
-                    boxShadow: '0 8px 24px rgba(48, 31, 39, 0.08)',
-                    fontStyle: 'italic',
-                    color: 'text.secondary',
+                    borderRadius: 1,
+                    border: 1,
+                    borderColor: 'divider',
+                    flexShrink: 0,
                   }}
                 >
-                  {activeMatch?.name || 'Match'} is typing…
-                </Box>
+                  <QueueMusicRoundedIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+
+          {/* Message scroller */}
+          <Box
+            ref={messageScrollRef}
+            sx={{
+              flex: 1,
+              px: { xs: 1.25, sm: 2.5 },
+              py: 2,
+              minHeight: 0,
+              overflowY: 'auto',
+              bgcolor: 'action.hover',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.4,
+            }}
+          >
+            {activeMessages.length === 0 ? (
+              <EmptyThread match={activeMatch} />
+            ) : (
+              grouped.map(({ message, position, showAvatar, showTimestamp }) => (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  onReact={(emoji) => reactToMessage(message.id, emoji)}
+                  groupPosition={position}
+                  showAvatar={showAvatar}
+                  showTimestamp={showTimestamp}
+                  partnerAvatar={activeMatch?.image}
+                />
+              ))
+            )}
+            {typingMatchId && typingMatchId === activeMatch?.id && (
+              <Box sx={{ mt: 0.5 }}>
+                <TypingDots avatar={activeMatch?.image} />
               </Box>
             )}
-            {activeMessages.map((message) => (
-              <MessageRow
-                key={message.id}
-                message={message}
-                onReact={(emoji) => reactToMessage(message.id, emoji)}
+          </Box>
+
+          {/* Composer */}
+          <Box sx={{ p: 1.5, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-end' }}>
+              <TextField
+                fullWidth
+                multiline
+                maxRows={5}
+                placeholder="Send a song, a thought, or both"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  // Skip Enter while an IME composition is active so CJK input
+                  // doesn't accidentally send half a word.
+                  const composing = (event.nativeEvent as KeyboardEvent).isComposing
+                    || (event as unknown as { keyCode: number }).keyCode === 229;
+                  if (event.key === 'Enter' && !event.shiftKey && !composing) {
+                    event.preventDefault();
+                    handleSend();
+                  }
+                }}
+                slotProps={{
+                  input: {
+                    sx: {
+                      borderRadius: 1,
+                      bgcolor: 'action.hover',
+                      px: 1.5,
+                      py: 0.6,
+                      fontSize: 14,
+                    },
+                  },
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-notchedOutline': { border: 0 },
+                }}
               />
-            ))}
-          </Stack>
-          <Stack direction="row" spacing={1} sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-            <InputBase
-              fullWidth
-              placeholder="Send a song, a thought, or both"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  handleSend();
-                }
-              }}
-              sx={{ px: 1.5, py: 1, borderRadius: 2, bgcolor: 'action.hover' }}
-            />
-            <Button variant="contained" endIcon={<SendRoundedIcon />} onClick={handleSend} disabled={!draft.trim()}>Send</Button>
-          </Stack>
+              <IconButton
+                color="primary"
+                onClick={handleSend}
+                disabled={!draft.trim()}
+                sx={{
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                  borderRadius: 1,
+                  '&:hover': { bgcolor: 'primary.dark' },
+                  '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' },
+                  width: 42,
+                  height: 42,
+                }}
+                aria-label="Send message"
+              >
+                <SendRoundedIcon />
+              </IconButton>
+            </Stack>
+          </Box>
         </Box>
       </Paper>
     </Box>
   );
 };
 
-type MessageRowProps = {
-  message: ChatMessage;
-  onReact: (emoji: string) => void;
+type SidebarItemProps = {
+  match: Match;
+  lastMessage?: ChatMessage;
+  active: boolean;
+  onSelect: () => void;
 };
 
-const MessageRow: React.FC<MessageRowProps> = ({ message, onReact }) => {
-  const mine = message.from === 'You';
-  const bubbleRef = useRef<HTMLDivElement | null>(null);
-  const lastTapRef = useRef(0);
-  const longPressTimer = useRef<number | null>(null);
-  const longPressFired = useRef(false);
-  const [bump, setBump] = useState(false);
-  const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
-
-  const openPicker = (anchor?: HTMLElement | null) => {
-    setPickerAnchor(anchor ?? bubbleRef.current);
-  };
-
-  const applyReaction = (emoji: string) => {
-    onReact(emoji);
-    if (message.reaction !== emoji) {
-      setBump(true);
-      window.setTimeout(() => setBump(false), 280);
-    }
-    setPickerAnchor(null);
-  };
-
-  const handleBubbleClick = () => {
-    if (longPressFired.current) {
-      longPressFired.current = false;
-      return;
-    }
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      applyReaction(message.reaction || DEFAULT_REACTION);
-      lastTapRef.current = 0;
-    } else {
-      lastTapRef.current = now;
-    }
-  };
-
-  const startLongPress = () => {
-    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
-    longPressTimer.current = window.setTimeout(() => {
-      longPressFired.current = true;
-      openPicker(bubbleRef.current);
-    }, 450);
-  };
-
-  const cancelLongPress = () => {
-    if (longPressTimer.current) {
-      window.clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
+const SidebarItem: React.FC<SidebarItemProps> = ({ match, lastMessage, active, onSelect }) => {
+  const preview = lastMessage
+    ? `${lastMessage.from === 'You' ? 'You: ' : ''}${lastMessage.body}`
+    : 'Say hi to start the conversation.';
 
   return (
-    <Box
+    <ListItemButton
+      selected={active}
+      onClick={onSelect}
       sx={{
-        display: 'flex',
-        flexDirection: mine ? 'row-reverse' : 'row',
-        alignItems: 'flex-end',
-        gap: 0.5,
-        position: 'relative',
-        '&:hover .msg-react-btn, &:focus-within .msg-react-btn': {
-          opacity: 1,
-          pointerEvents: 'auto',
-        },
+        py: 1.2,
+        px: 1.5,
+        gap: 1,
+        alignItems: 'flex-start',
+        minWidth: 0,
+        borderRadius: { xs: 1, md: 0 },
+        m: { xs: 0.75, md: 0 },
+        '&.Mui-selected': { bgcolor: 'action.selected' },
       }}
     >
-      <Box
-        ref={bubbleRef}
-        onClick={handleBubbleClick}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          openPicker(event.currentTarget as HTMLElement);
-        }}
-        onTouchStart={startLongPress}
-        onTouchEnd={cancelLongPress}
-        onTouchMove={cancelLongPress}
-        onTouchCancel={cancelLongPress}
-        onMouseDown={startLongPress}
-        onMouseUp={cancelLongPress}
-        onMouseLeave={cancelLongPress}
-        sx={{
-          position: 'relative',
-          maxWidth: 520,
-          px: 1.8,
-          py: 1.2,
-          borderRadius: 2,
-          bgcolor: mine ? 'primary.main' : 'background.paper',
-          color: mine ? 'primary.contrastText' : 'text.primary',
-          border: 1,
-          borderColor: mine ? 'transparent' : 'divider',
-          boxShadow: 1,
-          cursor: 'pointer',
-          userSelect: 'text',
-          transition: 'transform 200ms ease',
-          transform: bump ? 'scale(1.04)' : 'scale(1)',
-          WebkitTouchCallout: 'none',
-        }}
-      >
-        <Typography>{message.body}</Typography>
-        <Typography variant="caption" sx={{ opacity: 0.72 }}>{message.time}</Typography>
-        {message.reaction && (
-          <Box
-            aria-label={`Reacted ${message.reaction}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              applyReaction(message.reaction as string);
-            }}
+      <ListItemAvatar sx={{ minWidth: 'auto', mr: 0 }}>
+        <Avatar src={match.image} variant="rounded" sx={{ width: 42, height: 42 }} />
+      </ListItemAvatar>
+      <ListItemText
+        sx={{ minWidth: 0, m: 0 }}
+        primary={
+          <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 1, minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 800, fontSize: 14, minWidth: 0 }} noWrap>
+              {match.name}
+            </Typography>
+            {lastMessage && (
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                {lastMessage.time}
+              </Typography>
+            )}
+          </Stack>
+        }
+        secondary={
+          <Typography
+            variant="caption"
+            color="text.secondary"
             sx={{
-              position: 'absolute',
-              [mine ? 'left' : 'right']: -10,
-              bottom: -10,
-              minWidth: 26,
-              height: 26,
-              px: 0.6,
-              borderRadius: 99,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: 'background.paper',
-              border: 1,
-              borderColor: 'divider',
-              boxShadow: 1,
-              fontSize: 14,
-              lineHeight: 1,
-              cursor: 'pointer',
+              display: '-webkit-box',
+              WebkitLineClamp: 1,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              fontSize: 12.5,
             }}
           >
-            {message.reaction}
-          </Box>
-        )}
-      </Box>
-      <IconButton
-        size="small"
-        className="msg-react-btn"
-        onClick={() => openPicker(bubbleRef.current)}
-        aria-label="Add reaction"
-        sx={{
-          opacity: 0,
-          pointerEvents: 'none',
-          transition: 'opacity 140ms ease',
-          color: 'text.secondary',
-        }}
-      >
-        <AddReactionRoundedIcon fontSize="small" />
-      </IconButton>
-      <Popover
-        open={Boolean(pickerAnchor)}
-        anchorEl={pickerAnchor}
-        onClose={() => setPickerAnchor(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        slotProps={{
-          paper: {
-            sx: {
-              borderRadius: 99,
-              p: 0.5,
-              mt: -1,
-              boxShadow: 6,
-              border: 1,
-              borderColor: 'divider',
-            },
-          },
-        }}
-      >
-        <Stack direction="row" spacing={0.25}>
-          {REACTIONS.map((emoji) => {
-            const active = message.reaction === emoji;
-            return (
-              <IconButton
-                key={emoji}
-                size="small"
-                onClick={() => applyReaction(emoji)}
-                sx={{
-                  fontSize: 18,
-                  width: 34,
-                  height: 34,
-                  bgcolor: active ? 'action.selected' : 'transparent',
-                  '&:hover': { transform: 'scale(1.2)' },
-                  transition: 'transform 120ms ease',
-                }}
-              >
-                <Box component="span" aria-hidden sx={{ fontSize: 18, lineHeight: 1 }}>{emoji}</Box>
-              </IconButton>
-            );
-          })}
-        </Stack>
-      </Popover>
-    </Box>
+            {preview}
+          </Typography>
+        }
+      />
+    </ListItemButton>
   );
 };
+
+const EmptyThread: React.FC<{ match?: Match }> = ({ match }) => (
+  <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', py: 6, px: 2 }}>
+    <Avatar src={match?.image} sx={{ width: 64, height: 64, mb: 1.5 }} />
+    <Typography variant="h6" sx={{ mb: 0.5 }}>
+      {match ? `You matched with ${match.name}` : 'Pick a conversation'}
+    </Typography>
+    <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 340 }}>
+      {match
+        ? `Send the first message. They lean toward ${match.taste.split(',').slice(0, 2).join(' and ') || 'similar artists'}.`
+        : 'Choose a match from the list to start chatting.'}
+    </Typography>
+  </Box>
+);
 
 export default Chat;

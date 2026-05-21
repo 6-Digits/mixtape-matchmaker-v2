@@ -1,19 +1,17 @@
+import jasonProfile from '../assets/jason_profile.jpg';
 import { matches, messages, playlists } from '../data/demo';
 import type { ChatMessage, Match, Playlist } from '../data/demo';
+import type { AppUser } from '../state/appDataTypes';
 
 export type MockDb = {
-  user: {
-    id: string;
-    displayName: string;
-    provider: 'mock';
-  };
+  user: AppUser & { provider: 'mock' };
   playlists: Playlist[];
   matches: Match[];
   messages: ChatMessage[];
   updatedAt: string;
 };
 
-const MOCK_DB_KEY = 'mixtape-matchmaker.mock-db.v4';
+const MOCK_DB_KEY = 'mixtape-matchmaker.mock-db.v5';
 const memoryStorage = new Map<string, string>();
 const MAX_PLAYLISTS = 24;
 const MAX_MESSAGES = 80;
@@ -77,6 +75,14 @@ function createSeedDb(): MockDb {
       id: 'mock-user',
       displayName: 'Mock Listener',
       provider: 'mock',
+      image: jasonProfile,
+      bio: 'I build playlists like little time capsules: city-pop sparkle, indie hooks, and songs for walking home late.',
+      location: 'Los Angeles',
+      lookingFor: 'People who trade songs with context and care about the order.',
+      favoriteTrack: 'Midnight City',
+      favoritePlaylist: 'City Lights, Side A',
+      taste: 'M83, Robyn, Frank Ocean, Tame Impala',
+      profileTags: ['Night walks', 'Synth-pop', 'Soft R&B'],
     },
     playlists,
     matches,
@@ -88,9 +94,20 @@ function createSeedDb(): MockDb {
 function normalizeMockDb(db: MockDb): MockDb {
   const seed = createSeedDb();
   const seedPlaylistsById = new Map(seed.playlists.map((playlist) => [playlist.id, playlist]));
+  const matchesById = new Map(db.matches.map((match) => [match.id, match]));
+  const mergedMatches = [
+    ...db.matches,
+    ...seed.matches.filter((match) => !matchesById.has(match.id)),
+  ];
 
   return compactMockDb({
-    user: db.user || seed.user,
+    user: {
+      ...seed.user,
+      ...(db.user || {}),
+      provider: 'mock',
+      image: db.user?.image || seed.user.image,
+      profileTags: Array.isArray(db.user?.profileTags) ? db.user.profileTags.slice(0, 5) : seed.user.profileTags,
+    },
     playlists: db.playlists.map((playlist) => {
       const seeded = seedPlaylistsById.get(playlist.id);
       return {
@@ -100,12 +117,23 @@ function normalizeMockDb(db: MockDb): MockDb {
         comments: Array.isArray(playlist.comments) ? playlist.comments : seeded?.comments || [],
       };
     }),
-    matches: db.matches.map((match) => {
+    matches: mergedMatches.map((match) => {
       const seeded = seed.matches.find((item) => item.id === match.id);
+      // Migrate legacy `status` if the new flags are missing.
+      const legacyLiked = match.status === 'liked';
+      const legacyPassed = match.status === 'passed';
       return {
         ...match,
         image: match.image || seeded?.image || seed.matches[0].image,
-        status: match.status ?? 'liked',
+        bio: match.bio ?? seeded?.bio,
+        location: match.location ?? seeded?.location,
+        lookingFor: match.lookingFor ?? seeded?.lookingFor,
+        favoriteTrack: match.favoriteTrack ?? seeded?.favoriteTrack,
+        profileTags: match.profileTags ?? seeded?.profileTags,
+        theyLikedYou: match.theyLikedYou ?? seeded?.theyLikedYou ?? legacyLiked,
+        youLiked: match.youLiked ?? seeded?.youLiked ?? legacyLiked,
+        passed: match.passed ?? seeded?.passed ?? legacyPassed,
+        status: undefined,
       };
     }),
     messages: db.messages.map((message, index) => ({
@@ -114,6 +142,7 @@ function normalizeMockDb(db: MockDb): MockDb {
       from: message.from,
       body: message.body,
       time: message.time,
+      reaction: message.reaction,
     })),
     updatedAt: db.updatedAt || new Date().toISOString(),
   });

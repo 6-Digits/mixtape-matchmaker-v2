@@ -24,15 +24,16 @@ const Home: React.FC = () => {
   const {
     addSongToPlaylist,
     authenticated,
+    commentOnPlaylist,
     createPlaylist,
     deletePlaylist,
     editPlaylist,
     likePlaylist,
     likePlaylistComment,
-    matches,
+    moveSongInPlaylist,
+    mutualMatches,
     playPlaylist,
     playlists,
-    reactToMatch,
     removeSongFromPlaylist,
     signIn,
     unmatch,
@@ -105,7 +106,7 @@ const Home: React.FC = () => {
               <Typography variant="h4">Popular Playlists</Typography>
               <Typography color="text.secondary">Fresh mixes from people nearby and listeners with overlap.</Typography>
             </Box>
-            <Button startIcon={<ShareRoundedIcon />} onClick={createPlaylist}>Create local mix</Button>
+            <Button startIcon={<ShareRoundedIcon />} onClick={() => createPlaylist()}>Create local mix</Button>
           </Stack>
           <Grid container spacing={2}>
             {playlists.map((playlist) => (
@@ -119,6 +120,7 @@ const Home: React.FC = () => {
                   onDelete={deletePlaylist}
                   onEdit={() => setEditingId(playlist.id)}
                   onLikeComment={likePlaylistComment}
+                  onComment={commentOnPlaylist}
                 />
               </Grid>
             ))}
@@ -141,12 +143,11 @@ const Home: React.FC = () => {
               <FavoriteRoundedIcon color="primary" />
             </Stack>
             <Stack spacing={1.5}>
-              {matches.slice(0, 3).map((match) => (
+              {mutualMatches.slice(0, 3).map((match) => (
                 <MatchCard
                   key={match.id}
                   match={match}
-                  onLike={(matchId) => reactToMatch(matchId, 'liked')}
-                  onChat={() => navigate('/chat')}
+                  onChat={() => navigate(`/chat?match=${match.id}`)}
                   onOpenPlaylist={() => navigate(`/playlists?q=${encodeURIComponent(match.playlist)}`)}
                   onUnmatch={unmatch}
                 />
@@ -162,6 +163,7 @@ const Home: React.FC = () => {
         onSaveDetails={(patch) => editingPlaylist && editPlaylist(editingPlaylist.id, patch)}
         onAddSong={(song) => editingPlaylist && addSongToPlaylist(editingPlaylist.id, song)}
         onRemoveSong={(index) => editingPlaylist && removeSongFromPlaylist(editingPlaylist.id, index)}
+        onMoveSong={(from, to) => editingPlaylist && moveSongInPlaylist(editingPlaylist.id, from, to)}
       />
     </Box>
   );

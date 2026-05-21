@@ -13,23 +13,30 @@ import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import PlaylistCard from '../components/PlaylistCard';
 import EditPlaylistDialog from '../components/EditPlaylistDialog';
+import NewPlaylistDialog from '../components/NewPlaylistDialog';
+import PlaylistDetailsDialog from '../components/PlaylistDetailsDialog';
 import { useAppData } from '../state/AppDataContext';
 import { useSearchParams } from 'react-router-dom';
 
 const Playlists: React.FC = () => {
   const {
     addSongToPlaylist,
+    commentOnPlaylist,
     createPlaylist,
     deletePlaylist,
     editPlaylist,
     likePlaylist,
     likePlaylistComment,
+    moveSongInPlaylist,
     playPlaylist,
     playlists,
     removeSongFromPlaylist,
   } = useAppData();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const editingPlaylist = editingId ? playlists.find((p) => p.id === editingId) ?? null : null;
+  const openPlaylist = openId ? playlists.find((p) => p.id === openId) ?? null : null;
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [popularFirst, setPopularFirst] = useState(false);
@@ -56,11 +63,25 @@ const Playlists: React.FC = () => {
           <Typography variant="h3">Playlists</Typography>
           <Typography color="text.secondary">Manage your mixtapes and browse public mixes worth saving.</Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
-          <Button variant={popularFirst ? 'contained' : 'outlined'} startIcon={<FilterListRoundedIcon />} onClick={() => setPopularFirst((value) => !value)}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Button
+            size="small"
+            variant={popularFirst ? 'contained' : 'outlined'}
+            startIcon={<FilterListRoundedIcon />}
+            onClick={() => setPopularFirst((value) => !value)}
+            sx={{ minHeight: 36 }}
+          >
             Popular first
           </Button>
-          <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={createPlaylist}>New playlist</Button>
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<AddRoundedIcon />}
+            onClick={() => setCreating(true)}
+            sx={{ minHeight: 36 }}
+          >
+            New playlist
+          </Button>
         </Stack>
       </Stack>
 
@@ -95,11 +116,16 @@ const Playlists: React.FC = () => {
               playlist={playlist}
               editable
               onLike={likePlaylist}
-              onOpen={() => setQuery(playlist.title)}
+              onOpen={() => setOpenId(playlist.id)}
               onPlay={playPlaylist}
-              onDelete={deletePlaylist}
+              onDelete={(playlistId) => {
+                if (openId === playlistId) setOpenId(null);
+                if (editingId === playlistId) setEditingId(null);
+                deletePlaylist(playlistId);
+              }}
               onEdit={() => setEditingId(playlist.id)}
               onLikeComment={likePlaylistComment}
+              onComment={commentOnPlaylist}
             />
           </Grid>
         ))}
@@ -109,6 +135,21 @@ const Playlists: React.FC = () => {
           <Typography>No playlists match your search.</Typography>
         </Paper>
       )}
+      <NewPlaylistDialog
+        open={creating}
+        fallbackImage={playlists[0]?.image}
+        onClose={() => setCreating(false)}
+        onCreate={createPlaylist}
+      />
+      <PlaylistDetailsDialog
+        open={Boolean(openPlaylist)}
+        playlist={openPlaylist}
+        onClose={() => setOpenId(null)}
+        onPlaySong={playPlaylist}
+        onLike={likePlaylist}
+        onLikeComment={likePlaylistComment}
+        onComment={commentOnPlaylist}
+      />
       <EditPlaylistDialog
         open={Boolean(editingPlaylist)}
         playlist={editingPlaylist}
@@ -116,6 +157,7 @@ const Playlists: React.FC = () => {
         onSaveDetails={(patch) => editingPlaylist && editPlaylist(editingPlaylist.id, patch)}
         onAddSong={(song) => editingPlaylist && addSongToPlaylist(editingPlaylist.id, song)}
         onRemoveSong={(index) => editingPlaylist && removeSongFromPlaylist(editingPlaylist.id, index)}
+        onMoveSong={(from, to) => editingPlaylist && moveSongInPlaylist(editingPlaylist.id, from, to)}
       />
     </Box>
   );

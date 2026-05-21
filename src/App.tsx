@@ -6,6 +6,7 @@ import { useAppData } from './state/AppDataContext';
 
 const Home = lazy(() => import('./pages/Home'));
 const Playlists = lazy(() => import('./pages/Playlists'));
+const Discover = lazy(() => import('./pages/Discover'));
 const Matches = lazy(() => import('./pages/Matches'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Login = lazy(() => import('./pages/Login'));
@@ -53,6 +54,7 @@ const App: React.FC = () => {
         >
           <Route index element={<Suspense fallback={<Fallback />}><Home /></Suspense>} />
           <Route path="playlists" element={<Suspense fallback={<Fallback />}><Playlists /></Suspense>} />
+          <Route path="discover" element={<Suspense fallback={<Fallback />}><Discover /></Suspense>} />
           <Route path="matches" element={<Suspense fallback={<Fallback />}><Matches /></Suspense>} />
           <Route path="chat" element={<Suspense fallback={<Fallback />}><Chat /></Suspense>} />
           <Route path="login" element={<Suspense fallback={<Fallback />}><Login /></Suspense>} />

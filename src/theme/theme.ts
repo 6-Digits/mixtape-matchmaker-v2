@@ -40,14 +40,22 @@ export const createAppTheme = (mode: PaletteMode) => createTheme({
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 9999,
-          padding: '8px 20px',
+          borderRadius: 8,
+          minHeight: 36,
+          padding: '6px 14px',
           boxShadow: 'none',
           transition: 'all 0.2s ease-in-out',
           '&:hover': {
             boxShadow: mode === 'dark' ? '0 4px 12px rgba(0,0,0,0.4)' : '0 4px 12px rgba(0,0,0,0.1)',
-            transform: 'translateY(-1px)',
           },
+        },
+        sizeSmall: {
+          minHeight: 30,
+          padding: '4px 10px',
+        },
+        sizeLarge: {
+          minHeight: 44,
+          padding: '8px 18px',
         },
         contained: {
           fontWeight: 800,

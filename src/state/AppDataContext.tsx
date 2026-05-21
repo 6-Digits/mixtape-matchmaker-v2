@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PaletteMode } from '@mui/material';
-import type { ChatMessage, Match, Playlist, Song } from '../data/demo';
+import type { Song } from '../data/demo';
+import { isMutualMatch, isInLikesInbox, isInDiscover, isWaitingOnThem } from '../data/demo';
 import { API_URL, detectServer, devOAuthLogin, fetchServerAccount } from '../services/api';
 import {
   loadMockDb,
@@ -11,102 +12,43 @@ import {
   saveMockDb,
   type MockDb,
 } from '../services/mockDb';
-import { createLocalMatchReply } from '../services/localMatchLlm';
-import { generateRandomMatch } from '../services/randomMatch';
+import { createLocalMatchReply } from '../services/chatbot';
+import {
+  LIKE_QUOTA,
+  LIKES_KEY,
+  MOCK_SESSION_KEY,
+  THEME_KEY,
+  TOKEN_KEY,
+  mockReplies,
+  readLikeBudget,
+  type LikeBudget,
+} from './appDataConfig';
+import { applyRandomMockEvent } from './mockEvents';
+import {
+  addSongToPlaylistInDb,
+  commentOnPlaylistInDb,
+  createPlaylistInDb,
+  deletePlaylistInDb,
+  editPlaylistInDb,
+  likePlaylistCommentInDb,
+  likePlaylistInDb,
+  moveSongInPlaylistInDb,
+  removeSongFromPlaylistInDb,
+} from './playlistMutations';
+import type {
+  AppDataContextValue,
+  AppMode,
+  AppUser,
+  CreatePlaylistInput,
+  PlaylistDetailsPatch,
+  UserProfilePatch,
+} from './appDataTypes';
+import { useAudioPlayer } from './useAudioPlayer';
+import { useNotifications } from './useNotifications';
 
-const MAX_MATCHES = 12;
-
-type AppMode = 'checking' | 'mock' | 'server';
-
-type AppUser = {
-  id: string;
-  displayName: string;
-  provider: 'mock' | 'server';
-};
-
-export type AppNotification = {
-  id: string;
-  message: string;
-  time: string;
-  read: boolean;
-  createdAt: number;
-  target?: string;
-};
-
-export type NowPlaying = {
-  playlistId: string;
-  playlistTitle: string;
-  songs: Song[];
-  index: number;
-  previewUrl?: string;
-  loading?: boolean;
-  playing?: boolean;
-  position: number;
-  duration: number;
-};
-
-type AppDataContextValue = {
-  mode: AppMode;
-  apiUrl: string;
-  user: AppUser | null;
-  authenticated: boolean;
-  playlists: Playlist[];
-  matches: Match[];
-  messages: ChatMessage[];
-  notifications: AppNotification[];
-  nowPlaying: NowPlaying | null;
-  notice: string | null;
-  themeMode: PaletteMode;
-  typingMatchId: string | null;
-  createPlaylist: () => void;
-  clearNotice: () => void;
-  clearNotifications: () => void;
-  deletePlaylist: (playlistId: string) => void;
-  dismissNotification: (notificationId: string) => void;
-  editPlaylist: (playlistId: string, patch: { title?: string; description?: string }) => void;
-  addSongToPlaylist: (playlistId: string, song: Song) => void;
-  removeSongFromPlaylist: (playlistId: string, songIndex: number) => void;
-  likePlaylist: (playlistId: string) => void;
-  likePlaylistComment: (playlistId: string, commentId: string) => void;
-  markNotificationsRead: () => void;
-  playPlaylist: (playlist: Playlist, startIndex?: number) => Promise<void>;
-  reactToMatch: (matchId: string, status: 'liked' | 'passed') => void;
-  unmatch: (matchId: string) => void;
-  sendMessage: (body: string, matchId?: string) => void;
-  reactToMessage: (messageId: string, emoji: string) => void;
-  signIn: (displayName?: string) => Promise<void>;
-  signOut: () => void;
-  togglePlayback: () => void;
-  nextTrack: () => void;
-  previousTrack: () => void;
-  seekTo: (seconds: number) => void;
-  stopPlayback: () => void;
-  toggleThemeMode: () => void;
-  resetMatches: () => void;
-};
+export type { AppNotification, NowPlaying } from './appDataTypes';
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
-const TOKEN_KEY = 'mixtape-matchmaker.server-token';
-const THEME_KEY = 'mixtape-matchmaker.theme-mode';
-const MOCK_SESSION_KEY = 'mixtape-matchmaker.mock-session';
-const NOTIFICATION_KEY = 'mixtape-matchmaker.notifications';
-const MAX_NOTIFICATIONS = 8;
-const NOTIFICATION_TTL_MS = 60_000;
-
-const starterSongs: Song[] = [
-  { title: 'Maps', artist: 'Yeah Yeah Yeahs', album: 'Fever to Tell', year: 2003, duration: '3:39' },
-  { title: 'Rebellion (Lies)', artist: 'Arcade Fire', album: 'Funeral', year: 2004, duration: '5:10' },
-  { title: 'Such Great Heights', artist: 'The Postal Service', album: 'Give Up', year: 2003, duration: '4:26' },
-  { title: 'Two Weeks', artist: 'Grizzly Bear', album: 'Veckatimest', year: 2009, duration: '4:03' },
-];
-
-const mockReplies = [
-  'That track fits your playlist perfectly.',
-  'I forgot how good that chorus is.',
-  'Adding this to my reply mix.',
-  'Your sequencing is better than mine.',
-  'This is exactly the kind of song I was hoping to find here.',
-];
 
 export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [mode, setMode] = useState<AppMode>('checking');
@@ -114,13 +56,32 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
   const mockDbRef = useRef<MockDb>(mockDb);
   useEffect(() => { mockDbRef.current = mockDb; }, [mockDb]);
   const [user, setUser] = useState<AppUser | null>(null);
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-    return safeJsonParse<AppNotification[]>(safeGetItem(NOTIFICATION_KEY), []);
-  });
-  const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [typingMatchId, setTypingMatchId] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [likeBudget, setLikeBudget] = useState<LikeBudget>(() => readLikeBudget());
+  const {
+    clearNotice,
+    clearNotifications,
+    dismissNotification,
+    markNotificationsRead,
+    notice,
+    notifications,
+    pushNotice,
+    pushNotification,
+  } = useNotifications(user);
+  const {
+    nextTrack,
+    nowPlaying,
+    playPlaylist,
+    previousTrack,
+    seekTo,
+    stopPlayback,
+    togglePlayback,
+  } = useAudioPlayer(pushNotice);
+
+  const persistLikeBudget = (next: LikeBudget) => {
+    setLikeBudget(next);
+    safeSetItem(LIKES_KEY, JSON.stringify(next));
+  };
   const [themeMode, setThemeMode] = useState<PaletteMode>(() => {
     const saved = safeGetItem(THEME_KEY);
     return saved === 'dark' ? 'dark' : 'light';
@@ -137,7 +98,12 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
         const db = loadMockDb();
         setMockDb(db);
         const mockSession = safeJsonParse<AppUser | null>(safeGetItem(MOCK_SESSION_KEY), null);
-        setUser(mockSession);
+        setUser(mockSession ? {
+          ...db.user,
+          ...mockSession,
+          provider: 'mock',
+          profileTags: mockSession.profileTags || db.user.profileTags,
+        } : null);
         setMode('mock');
         return;
       }
@@ -164,103 +130,17 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
     };
   }, []);
 
-  const pushNotice = (message: string) => {
-    if (!user) return;
-    setNotice(message);
-  };
-
-  const pushNotification = (message: string, target?: string) => {
-    if (!user) return;
-    const notification = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      message,
-      time: new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date()),
-      read: false,
-      createdAt: Date.now(),
-      target,
-    };
-
-    setNotifications((current) => {
-      const next = [notification, ...current].slice(0, MAX_NOTIFICATIONS);
-      safeSetItem(NOTIFICATION_KEY, JSON.stringify(next));
-      return next;
-    });
-    setNotice((current) => current ?? message);
-  };
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setNotifications((current) => {
-        const cutoff = Date.now() - NOTIFICATION_TTL_MS;
-        const next = current.filter((notification) => !notification.read || notification.createdAt > cutoff);
-        if (next.length !== current.length) {
-          safeSetItem(NOTIFICATION_KEY, JSON.stringify(next));
-        }
-        return next;
-      });
-    }, 10_000);
-
-    return () => window.clearInterval(interval);
-  }, []);
-
   useEffect(() => {
     if (mode !== 'mock' || !user) return;
 
     const interval = window.setInterval(() => {
-      if (Math.random() < 0.6) return;
-      setMockDb((current) => {
-        const action = Math.random();
-        const playlistIndex = Math.floor(Math.random() * current.playlists.length);
-        const matchIndex = Math.floor(Math.random() * current.matches.length);
-        const playlist = current.playlists[playlistIndex];
-        const match = current.matches[matchIndex];
-        if (!playlist || !match) return current;
-
-        let next = current;
-        if (action < 0.1 && current.matches.length < MAX_MATCHES) {
-          const newMatch = generateRandomMatch(current.matches, current.playlists);
-          if (newMatch) {
-            next = { ...current, matches: [newMatch, ...current.matches] };
-            pushNotification(`New match: ${newMatch.name} (${newMatch.score}% overlap).`, '/matches');
-          }
-        } else if (action < 0.45) {
-          next = {
-            ...current,
-            playlists: current.playlists.map((item, index) => (
-              index === playlistIndex ? { ...item, likes: item.likes + 1 } : item
-            )),
-          };
-          // passive like — no notification needed
-        } else if (action < 0.75) {
-          const song = playlist.songs[Math.floor(Math.random() * playlist.songs.length)];
-          next = {
-            ...current,
-            messages: [
-              ...current.messages,
-              {
-                from: match.name,
-                id: `m-${Date.now()}`,
-                matchId: match.id,
-                body: `I just listened to “${song.title}” by ${song.artist}. Great pick.`,
-                time: new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date()),
-              },
-            ],
-          };
-          pushNotification(`${match.name} sent a new chat message.`, `/chat?match=${match.id}`);
-        } else {
-          next = {
-            ...current,
-            matches: current.matches.map((item, index) => (
-              index === matchIndex && item.status !== 'passed' ? { ...item, score: Math.min(99, item.score + 1) } : item
-            )),
-          };
-          // silent score nudge — no notification needed
-        }
-
-        saveMockDb(next);
-        return next;
-      });
-    }, 45_000);
+      const { db, notice } = applyRandomMockEvent(mockDbRef.current);
+      saveMockDb(db);
+      setMockDb(db);
+      if (notice) {
+        pushNotification(notice.message, notice.target);
+      }
+    }, 10_000);
 
     return () => window.clearInterval(interval);
   }, [mode, user]);
@@ -286,6 +166,43 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
     pushNotice('Signed in.');
   };
 
+  const updateUserProfile = (patch: UserProfilePatch) => {
+    const cleanTags = patch.profileTags
+      ?.map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    const cleanPatch: UserProfilePatch = {
+      ...patch,
+      displayName: patch.displayName?.trim(),
+      bio: patch.bio?.trim(),
+      location: patch.location?.trim(),
+      lookingFor: patch.lookingFor?.trim(),
+      favoriteTrack: patch.favoriteTrack?.trim(),
+      image: patch.image,
+      favoritePlaylist: patch.favoritePlaylist?.trim(),
+      taste: patch.taste?.trim(),
+      profileTags: cleanTags,
+    };
+
+    if (mode === 'mock') {
+      const updatedUser: AppUser & { provider: 'mock' } = {
+        ...mockDbRef.current.user,
+        ...cleanPatch,
+        displayName: cleanPatch.displayName || mockDbRef.current.user.displayName,
+        provider: 'mock',
+      };
+      updateMockDb((current) => ({ ...current, user: updatedUser }));
+      setUser(updatedUser);
+      safeSetItem(MOCK_SESSION_KEY, JSON.stringify(updatedUser));
+    } else {
+      setUser((current) => (
+        current ? { ...current, ...cleanPatch, displayName: cleanPatch.displayName || current.displayName } : current
+      ));
+    }
+
+    pushNotice('Profile updated.');
+  };
+
   const signOut = () => {
     if (mode === 'server') {
       safeRemoveItem(TOKEN_KEY);
@@ -293,9 +210,8 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
       safeRemoveItem(MOCK_SESSION_KEY);
     }
     setUser(null);
-    setNotifications([]);
-    safeSetItem(NOTIFICATION_KEY, JSON.stringify([]));
-    setNotice(null);
+    clearNotifications();
+    clearNotice();
   };
 
   const updateMockDb = (updater: (current: MockDb) => MockDb) => {
@@ -306,116 +222,90 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
     });
   };
 
-  const createPlaylist = () => {
-    updateMockDb((current) => ({
-      ...current,
-      playlists: [
-        {
-          id: `my-real-mix-${Date.now()}`,
-          title: 'My Real Mix',
-          description: 'A UI-only playlist seeded with real tracks you can edit later.',
-          image: current.playlists[0]?.image,
-          songs: starterSongs,
-          duration: '17m',
-          likes: 0,
-          tag: 'Mine',
-          owner: current.user.displayName,
-          comments: [
-            {
-              id: `c-${Date.now()}`,
-              user: current.user.displayName,
-              avatar: '',
-              body: 'New local mix. The comments work here too.',
-              likes: 0,
-            },
-          ],
-        },
-        ...current.playlists,
-      ],
-    }));
+  const createPlaylist = (input?: CreatePlaylistInput) => {
+    updateMockDb((current) => createPlaylistInDb(current, input));
   };
 
   const likePlaylist = (playlistId: string) => {
-    updateMockDb((current) => ({
-      ...current,
-      playlists: current.playlists.map((playlist) => (
-        playlist.id === playlistId ? { ...playlist, likes: playlist.likes + 1 } : playlist
-      )),
-    }));
+    updateMockDb((current) => likePlaylistInDb(current, playlistId));
+  };
+
+  const commentOnPlaylist = (playlistId: string, body: string) => {
+    updateMockDb((current) => commentOnPlaylistInDb(current, playlistId, body));
   };
 
   const likePlaylistComment = (playlistId: string, commentId: string) => {
-    updateMockDb((current) => ({
-      ...current,
-      playlists: current.playlists.map((playlist) => (
-        playlist.id === playlistId
-          ? {
-              ...playlist,
-              comments: playlist.comments.map((comment) => (
-                comment.id === commentId ? { ...comment, likes: comment.likes + 1 } : comment
-              )),
-            }
-          : playlist
-      )),
-    }));
+    updateMockDb((current) => likePlaylistCommentInDb(current, playlistId, commentId));
   };
 
-  const editPlaylist = (playlistId: string, patch: { title?: string; description?: string }) => {
-    updateMockDb((current) => ({
-      ...current,
-      playlists: current.playlists.map((playlist) => (
-        playlist.id === playlistId
-          ? {
-              ...playlist,
-              title: patch.title !== undefined ? patch.title : playlist.title,
-              description: patch.description !== undefined ? patch.description : playlist.description,
-            }
-          : playlist
-      )),
-    }));
+  const editPlaylist = (playlistId: string, patch: PlaylistDetailsPatch) => {
+    updateMockDb((current) => editPlaylistInDb(current, playlistId, patch));
   };
 
   const addSongToPlaylist = (playlistId: string, song: Song) => {
-    updateMockDb((current) => ({
-      ...current,
-      playlists: current.playlists.map((playlist) => (
-        playlist.id === playlistId
-          ? { ...playlist, songs: [...playlist.songs, song] }
-          : playlist
-      )),
-    }));
+    updateMockDb((current) => addSongToPlaylistInDb(current, playlistId, song));
   };
 
   const removeSongFromPlaylist = (playlistId: string, songIndex: number) => {
-    updateMockDb((current) => ({
-      ...current,
-      playlists: current.playlists.map((playlist) => (
-        playlist.id === playlistId
-          ? { ...playlist, songs: playlist.songs.filter((_, index) => index !== songIndex) }
-          : playlist
-      )),
-    }));
+    updateMockDb((current) => removeSongFromPlaylistInDb(current, playlistId, songIndex));
+  };
+
+  const moveSongInPlaylist = (playlistId: string, fromIndex: number, toIndex: number) => {
+    updateMockDb((current) => moveSongInPlaylistInDb(current, playlistId, fromIndex, toIndex));
   };
 
   const deletePlaylist = (playlistId: string) => {
     const playlist = mockDb.playlists.find((item) => item.id === playlistId);
-    updateMockDb((current) => ({
-      ...current,
-      playlists: current.playlists.filter((item) => item.id !== playlistId),
-    }));
+    updateMockDb((current) => deletePlaylistInDb(current, playlistId));
     pushNotice(`Deleted ${playlist?.title || 'playlist'}.`);
   };
 
-  const reactToMatch = (matchId: string, status: 'liked' | 'passed') => {
-    const existing = mockDb.matches.find((item) => item.id === matchId);
-    const toggleOff = status === 'liked' && existing?.status === 'liked';
-    const nextStatus: 'liked' | 'passed' | 'new' = toggleOff ? 'new' : status;
+  const likePerson = (matchId: string) => {
+    // Read latest state via ref to avoid double-charging the quota when two
+    // rapid clicks happen before a re-render.
+    const existing = mockDbRef.current.matches.find((item) => item.id === matchId);
+    if (!existing || existing.passed) return;
+    if (existing.youLiked) return; // already liked
+
+    const fresh = readLikeBudget();
+    if (fresh.used >= LIKE_QUOTA) {
+      const minutes = Math.max(1, Math.ceil((fresh.resetAt - Date.now()) / 60_000));
+      pushNotice(`Out of likes — refills in ${minutes < 60 ? `${minutes}m` : `${Math.ceil(minutes / 60)}h`}.`);
+      setLikeBudget(fresh);
+      return;
+    }
+    persistLikeBudget({ used: fresh.used + 1, resetAt: fresh.resetAt });
+
+    const becomesMutual = Boolean(existing.theyLikedYou);
     updateMockDb((current) => ({
       ...current,
       matches: current.matches.map((match) => (
-        match.id === matchId ? { ...match, status: nextStatus } : match
+        match.id === matchId ? { ...match, youLiked: true, passed: false } : match
       )),
     }));
+
+    if (becomesMutual) {
+      pushNotification(`It's a match with ${existing.name}! Say hi.`, `/chat?match=${matchId}`);
+    } else {
+      pushNotice(`Liked ${existing.name}. They'll see it next time they're on.`);
+    }
+  };
+
+  const passPerson = (matchId: string) => {
+    const existing = mockDb.matches.find((item) => item.id === matchId);
+    if (!existing) return;
+    updateMockDb((current) => ({
+      ...current,
+      matches: current.matches.map((match) => (
+        match.id === matchId ? { ...match, passed: true, youLiked: false } : match
+      )),
+    }));
+  };
+
+  // Legacy bridge for any remaining callers.
+  const reactToMatch = (matchId: string, status: 'liked' | 'passed') => {
+    if (status === 'liked') likePerson(matchId);
+    else passPerson(matchId);
   };
 
   const unmatch = (matchId: string) => {
@@ -431,9 +321,9 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
   const resetMatches = () => {
     updateMockDb((current) => ({
       ...current,
-      matches: current.matches.map((match) => ({ ...match, status: 'new' })),
+      matches: current.matches.map((match) => ({ ...match, passed: false })),
     }));
-    pushNotice('Matches refreshed.');
+    pushNotice('Discover refreshed.');
   };
 
   const reactToMessage = (messageId: string, emoji: string) => {
@@ -451,13 +341,18 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
     const trimmed = body.trim();
     if (!trimmed) return;
 
+    const initialTarget = mockDbRef.current.matches.find((item) => item.id === matchId)
+      || mockDbRef.current.matches.find((item) => !item.passed)
+      || mockDbRef.current.matches[0];
+    const sendTargetId = matchId || initialTarget?.id || 'jason';
+
     updateMockDb((current) => ({
       ...current,
       messages: [
         ...current.messages,
         {
           id: `m-${Date.now()}`,
-          matchId: matchId || mockDb.matches[0]?.id || 'jason',
+          matchId: sendTargetId,
           from: 'You',
           body: trimmed,
           time: new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date()),
@@ -465,36 +360,14 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
       ],
     }));
 
-    const appendReply = (replyText: string) => {
-      setMockDb((current) => {
-        const match = current.matches.find((item) => item.id === matchId)
-          || current.matches.find((item) => item.status !== 'passed')
-          || current.matches[0];
-        const next = {
-          ...current,
-          messages: [
-            ...current.messages,
-            {
-              from: match?.name || 'Jason',
-              id: `m-${Date.now()}-reply`,
-              matchId: match?.id || 'jason',
-              body: replyText,
-              time: new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date()),
-            },
-          ],
-        };
-        saveMockDb(next);
-        pushNotification(`${match?.name || 'Jason'} replied in chat.`, `/chat?match=${match?.id || 'jason'}`);
-        return next;
-      });
-    };
-
     const buildAndAppend = () => {
       const snapshot = mockDbRef.current;
-      const replyMatch = snapshot.matches.find((item) => item.id === matchId)
-        || snapshot.matches.find((item) => item.status !== 'passed')
-        || snapshot.matches[0];
-      const replyMatchId = replyMatch?.id || 'jason';
+      const replyMatch = snapshot.matches.find((item) => item.id === sendTargetId);
+      if (!replyMatch || replyMatch.passed) {
+        setTypingMatchId((current) => (current === sendTargetId ? null : current));
+        return;
+      }
+      const replyMatchId = replyMatch.id;
       const history = snapshot.messages.filter((m) => m.matchId === replyMatchId);
 
       const reply = createLocalMatchReply({
@@ -504,169 +377,35 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
         history,
         fallbackReplies: mockReplies,
       });
-      appendReply(reply);
+
+      updateMockDb((current) => ({
+        ...current,
+        messages: [
+          ...current.messages,
+          {
+            from: replyMatch?.name || 'Jason',
+            id: `m-${Date.now()}-reply`,
+            matchId: replyMatchId,
+            body: reply,
+            time: new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date()),
+          },
+        ],
+      }));
+
+      // Fire side effects AFTER state update — never inside the reducer.
+      pushNotification(
+        `${replyMatch?.name || 'Jason'}: ${reply.slice(0, 60)}${reply.length > 60 ? '…' : ''}`,
+        `/chat?match=${replyMatchId}`,
+      );
       setTypingMatchId((current) => (current === replyMatchId ? null : current));
     };
 
-    const replyMatch = mockDbRef.current.matches.find((item) => item.id === matchId)
-      || mockDbRef.current.matches.find((item) => item.status !== 'passed')
-      || mockDbRef.current.matches[0];
-    setTypingMatchId(replyMatch?.id || 'jason');
+    setTypingMatchId(initialTarget?.id || 'jason');
 
-    const delay = 600 + Math.floor(Math.random() * 700);
+    const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+    const delay = Math.min(3200, 700 + wordCount * 90 + Math.floor(Math.random() * 900));
     window.setTimeout(buildAndAppend, delay);
   };
-
-  const loadTrack = async (playlistId: string, playlistTitle: string, songs: Song[], index: number) => {
-    const song = songs[index];
-    if (!song) return;
-
-    setNowPlaying({
-      playlistId,
-      playlistTitle,
-      songs,
-      index,
-      loading: true,
-      playing: false,
-      position: 0,
-      duration: 0,
-    });
-
-    try {
-      const query = encodeURIComponent(`${song.title} ${song.artist}`);
-      const response = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`);
-      const data = await response.json();
-      const previewUrl = data.results?.[0]?.previewUrl;
-
-      if (!previewUrl) throw new Error('No preview found');
-
-      audioRef.current?.pause();
-      const audio = new Audio(previewUrl);
-      audioRef.current = audio;
-
-      audio.addEventListener('loadedmetadata', () => {
-        setNowPlaying((current) => current && current.playlistId === playlistId && current.index === index
-          ? { ...current, duration: audio.duration || 0 }
-          : current);
-      });
-      audio.addEventListener('timeupdate', () => {
-        setNowPlaying((current) => current && current.playlistId === playlistId && current.index === index
-          ? { ...current, position: audio.currentTime || 0 }
-          : current);
-      });
-      audio.addEventListener('ended', () => {
-        setNowPlaying((current) => {
-          if (!current || current.playlistId !== playlistId || current.index !== index) return current;
-          const nextIndex = current.index + 1;
-          if (nextIndex < current.songs.length) {
-            void loadTrack(current.playlistId, current.playlistTitle, current.songs, nextIndex);
-            return current;
-          }
-          return { ...current, playing: false, position: 0 };
-        });
-      });
-
-      await audio.play();
-      setNowPlaying({
-        playlistId,
-        playlistTitle,
-        songs,
-        index,
-        previewUrl,
-        loading: false,
-        playing: true,
-        position: 0,
-        duration: audio.duration || 0,
-      });
-    } catch {
-      setNowPlaying({
-        playlistId,
-        playlistTitle,
-        songs,
-        index,
-        loading: false,
-        playing: false,
-        position: 0,
-        duration: 0,
-      });
-      pushNotice(`Could not load a preview for ${song.title}.`);
-    }
-  };
-
-  const playPlaylist = async (playlist: Playlist, startIndex = 0) => {
-    if (playlist.songs.length === 0) return;
-    await loadTrack(playlist.id, playlist.title, playlist.songs, Math.max(0, Math.min(startIndex, playlist.songs.length - 1)));
-  };
-
-  const togglePlayback = () => {
-    const audio = audioRef.current;
-    if (!audio || !nowPlaying?.previewUrl) return;
-
-    if (audio.paused) {
-      audio.play();
-      setNowPlaying({ ...nowPlaying, playing: true });
-    } else {
-      audio.pause();
-      setNowPlaying({ ...nowPlaying, playing: false });
-    }
-  };
-
-  const nextTrack = () => {
-    if (!nowPlaying) return;
-    const next = nowPlaying.index + 1;
-    if (next >= nowPlaying.songs.length) return;
-    void loadTrack(nowPlaying.playlistId, nowPlaying.playlistTitle, nowPlaying.songs, next);
-  };
-
-  const previousTrack = () => {
-    if (!nowPlaying) return;
-    const audio = audioRef.current;
-    if (audio && audio.currentTime > 3) {
-      audio.currentTime = 0;
-      setNowPlaying({ ...nowPlaying, position: 0 });
-      return;
-    }
-    const prev = nowPlaying.index - 1;
-    if (prev < 0) return;
-    void loadTrack(nowPlaying.playlistId, nowPlaying.playlistTitle, nowPlaying.songs, prev);
-  };
-
-  const seekTo = (seconds: number) => {
-    const audio = audioRef.current;
-    if (!audio || !nowPlaying) return;
-    const clamped = Math.max(0, Math.min(seconds, audio.duration || seconds));
-    audio.currentTime = clamped;
-    setNowPlaying({ ...nowPlaying, position: clamped });
-  };
-
-  const stopPlayback = () => {
-    audioRef.current?.pause();
-    audioRef.current = null;
-    setNowPlaying(null);
-  };
-
-  const markNotificationsRead = () => {
-    setNotifications((current) => {
-      const next = current.map((notification) => ({ ...notification, read: true }));
-      safeSetItem(NOTIFICATION_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const dismissNotification = (notificationId: string) => {
-    setNotifications((current) => {
-      const next = current.filter((notification) => notification.id !== notificationId);
-      safeSetItem(NOTIFICATION_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const clearNotifications = () => {
-    setNotifications([]);
-    safeSetItem(NOTIFICATION_KEY, JSON.stringify([]));
-  };
-
-  const clearNotice = () => setNotice(null);
 
   const toggleThemeMode = () => {
     setThemeMode((current) => {
@@ -683,12 +422,18 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
     authenticated: Boolean(user),
     playlists: mockDb.playlists,
     matches: mockDb.matches,
+    discoverMatches: mockDb.matches.filter(isInDiscover),
+    likedYouMatches: mockDb.matches.filter(isInLikesInbox),
+    mutualMatches: mockDb.matches.filter(isMutualMatch),
+    waitingMatches: mockDb.matches.filter(isWaitingOnThem),
     messages: mockDb.messages,
     notifications,
     nowPlaying,
     notice,
     themeMode,
     typingMatchId,
+    likesRemaining: Math.max(0, LIKE_QUOTA - likeBudget.used),
+    likeQuota: LIKE_QUOTA,
     createPlaylist,
     clearNotice,
     clearNotifications,
@@ -697,11 +442,15 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
     editPlaylist,
     addSongToPlaylist,
     removeSongFromPlaylist,
+    moveSongInPlaylist,
     likePlaylist,
     likePlaylistComment,
+    commentOnPlaylist,
     markNotificationsRead,
     playPlaylist,
     reactToMatch,
+    likePerson,
+    passPerson,
     sendMessage,
     reactToMessage,
     signIn,
@@ -714,7 +463,8 @@ export const AppDataProvider: React.FC<React.PropsWithChildren> = ({ children })
     toggleThemeMode,
     unmatch,
     resetMatches,
-  }), [mode, mockDb, notifications, notice, nowPlaying, themeMode, typingMatchId, user]);
+    updateUserProfile,
+  }), [mode, mockDb, notifications, notice, nowPlaying, themeMode, typingMatchId, likeBudget, user]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 };

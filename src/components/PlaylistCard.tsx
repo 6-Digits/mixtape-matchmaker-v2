@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Button,
@@ -8,9 +8,12 @@ import {
   CardMedia,
   Chip,
   Avatar,
+  IconButton,
+  InputBase,
   Stack,
   Typography,
 } from '@mui/material';
+import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import FavoriteRoundedIcon from '@mui/icons-material/FavoriteRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import QueueMusicRoundedIcon from '@mui/icons-material/QueueMusicRounded';
@@ -27,11 +30,20 @@ type PlaylistCardProps = {
   onDelete?: (playlistId: string) => void;
   onEdit?: (playlist: Playlist) => void;
   onLikeComment?: (playlistId: string, commentId: string) => void;
+  onComment?: (playlistId: string, body: string) => void;
 };
 
-const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, editable, onLike, onOpen, onPlay, onDelete, onEdit, onLikeComment }) => {
+const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, editable, onLike, onOpen, onPlay, onDelete, onEdit, onLikeComment, onComment }) => {
   const visibleSongs = playlist.songs.slice(0, 3);
-  const visibleComments = playlist.comments.slice(0, 2);
+  const visibleComments = playlist.comments.slice(-2);
+  const [draft, setDraft] = useState('');
+
+  const submitComment = () => {
+    const body = draft.trim();
+    if (!body || !onComment) return;
+    onComment(playlist.id, body);
+    setDraft('');
+  };
 
   return (
     <Card
@@ -120,6 +132,43 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, editable, onLike,
               </Button>
             </Box>
           ))}
+          {onComment && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                mt: 0.5,
+                px: 1,
+                py: 0.4,
+                borderRadius: 99,
+                bgcolor: 'action.hover',
+              }}
+            >
+              <InputBase
+                fullWidth
+                placeholder="Comment…"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    submitComment();
+                  }
+                }}
+                sx={{ fontSize: 13, px: 0.5 }}
+              />
+              <IconButton
+                size="small"
+                onClick={submitComment}
+                disabled={!draft.trim()}
+                aria-label="Post comment"
+                sx={{ p: 0.5 }}
+              >
+                <SendRoundedIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
         </Stack>
       </CardContent>
       <CardActions sx={{ px: 2, pb: 2, pt: 0, flexWrap: 'wrap', gap: 0.5, '& > :not(style) + :not(style)': { ml: 0 } }}>

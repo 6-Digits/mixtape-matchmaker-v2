@@ -44,6 +44,15 @@ export function generateRandomMatch(existing: Match[], playlists: Playlist[]): M
     score: 70 + Math.floor(Math.random() * 25),
     taste: artistsFromPlaylist,
     playlist: playlist?.title ?? 'City Lights, Side A',
+    bio: `${name} is here for strong openers, honest skips, and playlists that say more than a bio can.`,
+    location: pick(['Los Angeles', 'Long Beach', 'Pasadena', 'Koreatown', 'Culver City', 'Oakland']),
+    lookingFor: pick([
+      'Someone who trades playlists instead of small talk.',
+      'A good first-song recommendation.',
+      'Low-pressure chats and high-quality hooks.',
+    ]),
+    favoriteTrack: playlist?.songs[0]?.title,
+    profileTags: artistsFromPlaylist.split(', ').slice(0, 3),
     status: 'new',
   };
 }

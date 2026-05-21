@@ -15,6 +15,12 @@ const mayaProfile = avatar('Maya', '#7c3aed');
 const alexProfile = avatar('Alex', '#0f766e');
 const samProfile = avatar('Sam', '#2563eb');
 const lenaProfile = avatar('Lena', '#be123c');
+const jordanProfile = avatar('Jordan', '#f97316');
+const priyaProfile = avatar('Priya', '#0ea5e9');
+const theoProfile = avatar('Theo', '#16a34a');
+const irisProfile = avatar('Iris', '#a855f7');
+const quinnProfile = avatar('Quinn', '#f59e0b');
+const rileyProfile = avatar('Riley', '#14b8a6');
 
 export type Playlist = {
   id: string;
@@ -44,8 +50,33 @@ export type Match = {
   score: number;
   taste: string;
   playlist: string;
+  bio?: string;
+  location?: string;
+  lookingFor?: string;
+  favoriteTrack?: string;
+  profileTags?: string[];
+  /** They liked you — appears in your "Likes you" inbox until you decide. */
+  theyLikedYou?: boolean;
+  /** You liked them — waiting on their response unless they also liked you. */
+  youLiked?: boolean;
+  /** Mutual = theyLikedYou && youLiked. Derived helpers below. */
+  passed?: boolean;
+  /** Deprecated, kept for migration off old data. */
   status?: 'new' | 'liked' | 'passed';
 };
+
+export function isMutualMatch(m: Match) {
+  return Boolean(m.theyLikedYou && m.youLiked) && !m.passed;
+}
+export function isInLikesInbox(m: Match) {
+  return Boolean(m.theyLikedYou) && !m.youLiked && !m.passed;
+}
+export function isInDiscover(m: Match) {
+  return !m.theyLikedYou && !m.youLiked && !m.passed;
+}
+export function isWaitingOnThem(m: Match) {
+  return Boolean(m.youLiked) && !m.theyLikedYou && !m.passed;
+}
 
 export type ChatMessage = {
   id: string;
@@ -180,6 +211,7 @@ export const playlists: Playlist[] = [
 ];
 
 export const matches: Match[] = [
+  // — Mutual matches (you can chat) —
   {
     id: 'jason',
     name: 'Jason',
@@ -187,7 +219,13 @@ export const matches: Match[] = [
     score: 94,
     taste: 'M83, Robyn, Tame Impala, Phoenix',
     playlist: 'City Lights, Side A',
-    status: 'liked',
+    bio: 'Night walks, sharp hooks, and a playlist that starts cinematic before it gets sentimental.',
+    location: 'Los Angeles',
+    lookingFor: 'Someone who notices transitions between songs.',
+    favoriteTrack: 'Midnight City',
+    profileTags: ['Synth-pop', 'Night drives', 'Big choruses'],
+    theyLikedYou: true,
+    youLiked: true,
   },
   {
     id: 'farhan',
@@ -196,8 +234,15 @@ export const matches: Match[] = [
     score: 89,
     taste: 'Frank Ocean, SZA, Daniel Caesar',
     playlist: 'Golden Hour Crush',
-    status: 'liked',
+    bio: 'Soft vocals, sunset pacing, and R&B that leaves room for a long conversation.',
+    location: 'San Diego',
+    lookingFor: 'Trading slow-burn albums and weekend coffee spots.',
+    favoriteTrack: 'Pink + White',
+    profileTags: ['R&B', 'Warm guitars', 'Sunday reset'],
+    theyLikedYou: true,
+    youLiked: true,
   },
+  // — Likes you (in your inbox, you haven't decided) —
   {
     id: 'darren',
     name: 'Darren',
@@ -205,7 +250,12 @@ export const matches: Match[] = [
     score: 86,
     taste: 'MGMT, Cage the Elephant, Grouplove',
     playlist: 'First Date Nerves',
-    status: 'liked',
+    bio: 'Indie hooks, a little chaos, and enough confidence to send the first message.',
+    location: 'Long Beach',
+    lookingFor: 'A first-date playlist that is charming without trying too hard.',
+    favoriteTrack: 'Electric Feel',
+    profileTags: ['Indie pop', 'Flirty basslines', 'Dive bars'],
+    theyLikedYou: true,
   },
   {
     id: 'new',
@@ -214,8 +264,14 @@ export const matches: Match[] = [
     score: 78,
     taste: 'The Killers, Florence + The Machine, The 1975',
     playlist: 'Make More Memories',
-    status: 'liked',
+    bio: 'Camera-roll nostalgia, loud singalongs, and songs that make errands feel like scenes.',
+    location: 'Pasadena',
+    lookingFor: 'Someone who still believes in a perfect road-trip chorus.',
+    favoriteTrack: 'Mr. Brightside',
+    profileTags: ['Nostalgia', 'Road trips', 'Festival energy'],
+    theyLikedYou: true,
   },
+  // — Discover (neither side has acted) —
   {
     id: 'maya-match',
     name: 'Maya',
@@ -223,7 +279,11 @@ export const matches: Match[] = [
     score: 91,
     taste: 'Robyn, M83, Sky Ferreira',
     playlist: 'City Lights, Side A',
-    status: 'liked',
+    bio: 'Neon pop maximalist. I care deeply about the first three songs of any mix.',
+    location: 'Silver Lake',
+    lookingFor: 'Late-night walks and very specific synth textures.',
+    favoriteTrack: 'Dancing On My Own',
+    profileTags: ['Dance-pop', 'Neon', 'After hours'],
   },
   {
     id: 'alex-match',
@@ -232,7 +292,11 @@ export const matches: Match[] = [
     score: 84,
     taste: 'SZA, Frank Ocean, The Temper Trap',
     playlist: 'Golden Hour Crush',
-    status: 'liked',
+    bio: 'Mostly mellow, secretly dramatic. I build playlists like they have weather.',
+    location: 'Oakland',
+    lookingFor: 'Album people, not just single people.',
+    favoriteTrack: 'Good Days',
+    profileTags: ['Alt R&B', 'Golden hour', 'Slow burn'],
   },
   {
     id: 'sam-match',
@@ -241,7 +305,11 @@ export const matches: Match[] = [
     score: 81,
     taste: 'Phoenix, MGMT, The Postal Service',
     playlist: 'First Date Nerves',
-    status: 'liked',
+    bio: 'Indie sleaze historian with a soft spot for songs that sound like borrowed jackets.',
+    location: 'Echo Park',
+    lookingFor: 'A low-pressure first drink and a high-stakes aux handoff.',
+    favoriteTrack: 'Lisztomania',
+    profileTags: ['Indie', '2000s', 'First dates'],
   },
   {
     id: 'lena-match',
@@ -250,7 +318,89 @@ export const matches: Match[] = [
     score: 88,
     taste: 'Yeah Yeah Yeahs, Arcade Fire, Grizzly Bear',
     playlist: 'My Real Mix',
-    status: 'liked',
+    bio: 'Tender guitars, dramatic drums, and a belief that every playlist needs one left turn.',
+    location: 'Highland Park',
+    lookingFor: 'Someone who likes a messy middle section.',
+    favoriteTrack: 'Maps',
+    profileTags: ['Indie rock', 'Deep cuts', 'Mixtapes'],
+  },
+  {
+    id: 'jordan-match',
+    name: 'Jordan',
+    image: jordanProfile,
+    score: 83,
+    taste: 'The Killers, The Lumineers, Florence + The Machine',
+    playlist: 'Make More Memories',
+    bio: 'Big-hearted playlist maker. I want the chorus to arrive before I overthink it.',
+    location: 'Santa Monica',
+    lookingFor: 'Beach drives, loud hooks, and no shame about repeat listens.',
+    favoriteTrack: 'Dog Days Are Over',
+    profileTags: ['Anthems', 'Beach drives', 'Feel-good'],
+  },
+  {
+    id: 'priya-match',
+    name: 'Priya',
+    image: priyaProfile,
+    score: 90,
+    taste: 'Solange, SZA, Childish Gambino',
+    playlist: 'Golden Hour Crush',
+    bio: 'I like playlists that breathe. Bonus points for a bassline that feels expensive.',
+    location: 'Culver City',
+    lookingFor: 'Someone who can talk production details without killing the mood.',
+    favoriteTrack: 'Cranes in the Sky',
+    profileTags: ['Soul', 'Production nerd', 'Warm nights'],
+  },
+  {
+    id: 'theo-match',
+    name: 'Theo',
+    image: theoProfile,
+    score: 76,
+    taste: 'Vampire Weekend, Arctic Monkeys, Modest Mouse',
+    playlist: 'First Date Nerves',
+    bio: 'Former blog-rock kid, current playlist tinkerer. I still sequence for side A and side B.',
+    location: 'Glendale',
+    lookingFor: 'Dry humor, good headphones, and a strong opener.',
+    favoriteTrack: 'Oxford Comma',
+    profileTags: ['Blog rock', 'Witty lyrics', 'Record stores'],
+  },
+  {
+    id: 'iris-match',
+    name: 'Iris',
+    image: irisProfile,
+    score: 87,
+    taste: 'Grimes, The Knife, Daft Punk',
+    playlist: 'City Lights, Side A',
+    bio: 'Electronic pop, strange textures, and songs that make the city look sharper.',
+    location: 'Koreatown',
+    lookingFor: 'Someone who likes dancing before dinner.',
+    favoriteTrack: 'Heartbeats',
+    profileTags: ['Electronic', 'Late nights', 'Sharp edges'],
+  },
+  {
+    id: 'quinn-match',
+    name: 'Quinn',
+    image: quinnProfile,
+    score: 79,
+    taste: 'Kings of Leon, Phoenix, Peter Bjorn and John',
+    playlist: 'Make More Memories',
+    bio: 'I make playlists for the ride home, then pretend I did not get sentimental.',
+    location: 'Venice',
+    lookingFor: 'A person who knows when to skip and when to let it play.',
+    favoriteTrack: 'Young Folks',
+    profileTags: ['Road songs', 'Hooks', 'Nostalgia'],
+  },
+  {
+    id: 'riley-match',
+    name: 'Riley',
+    image: rileyProfile,
+    score: 85,
+    taste: 'Robyn, Capital Cities, College',
+    playlist: 'City Lights, Side A',
+    bio: 'I like dance songs with a little ache in them. Best listened to while walking fast.',
+    location: 'Downtown LA',
+    lookingFor: 'Someone with a good walking pace and a better queue.',
+    favoriteTrack: 'A Real Hero',
+    profileTags: ['Dance floor', 'Cinematic', 'City walks'],
   },
 ];
 
@@ -259,5 +409,4 @@ export const messages: ChatMessage[] = [
   { id: 'm-jason-2', matchId: 'jason', from: 'You', body: 'I wanted the playlist to feel like walking home after the lights come on.', time: '9:43 AM' },
   { id: 'm-jason-3', matchId: 'jason', from: 'Jason', body: 'It works. I’m sending back Robyn, Phoenix, and maybe “A Real Hero.”', time: '9:44 AM' },
   { id: 'm-farhan-1', matchId: 'farhan', from: 'Farhan', body: 'Your Golden Hour mix made me replay “Japanese Denim.”', time: '10:12 AM' },
-  { id: 'm-darren-1', matchId: 'darren', from: 'Darren', body: 'The Cage the Elephant picks are carrying First Date Nerves.', time: '10:26 AM' },
 ];
