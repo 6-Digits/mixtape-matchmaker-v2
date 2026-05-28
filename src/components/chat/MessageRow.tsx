@@ -123,7 +123,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
       <Box
         sx={{
           position: 'relative',
-          maxWidth: { xs: 'min(82%, 520px)', md: 540 },
+          maxWidth: { xs: 'min(78%, 520px)', md: 540 },
           minWidth: 0,
           mb: message.reaction ? 1.4 : 0,
         }}
@@ -211,8 +211,9 @@ const MessageRow: React.FC<MessageRowProps> = ({
             [mine ? 'left' : 'right']: -34,
             width: 28,
             height: 28,
-            opacity: { xs: 1, sm: 0 },
-            pointerEvents: { xs: 'auto', sm: 'none' },
+            display: { xs: 'none', sm: 'inline-flex' },
+            opacity: 0,
+            pointerEvents: 'none',
             transform: 'translateY(-50%)',
             transition: 'opacity 140ms ease',
             color: 'text.secondary',

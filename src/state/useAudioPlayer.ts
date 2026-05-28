@@ -1,11 +1,21 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Playlist, Song } from '../data/demo';
 import { lookupPreview } from '../services/musicApi';
+import { claimAudio, releaseAudio } from '../services/audioBus';
 import type { NowPlaying } from './appDataTypes';
 
 export function useAudioPlayer(pushNotice: (message: string) => void) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null);
+
+  const stopPlayback = useCallback(() => {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setNowPlaying(null);
+    releaseAudio(stopPlaybackRef.current);
+  }, []);
+  const stopPlaybackRef = useRef(stopPlayback);
+  stopPlaybackRef.current = stopPlayback;
 
   const loadTrack = async (playlistId: string, playlistTitle: string, songs: Song[], index: number) => {
     const song = songs[index];
@@ -30,6 +40,7 @@ export function useAudioPlayer(pushNotice: (message: string) => void) {
       audioRef.current?.pause();
       const audio = new Audio(previewUrl);
       audioRef.current = audio;
+      claimAudio(stopPlaybackRef.current);
 
       audio.addEventListener('loadedmetadata', () => {
         setNowPlaying((current) => current && current.playlistId === playlistId && current.index === index
@@ -126,12 +137,6 @@ export function useAudioPlayer(pushNotice: (message: string) => void) {
     const clamped = Math.max(0, Math.min(seconds, audio.duration || seconds));
     audio.currentTime = clamped;
     setNowPlaying((current) => (current ? { ...current, position: clamped } : current));
-  };
-
-  const stopPlayback = () => {
-    audioRef.current?.pause();
-    audioRef.current = null;
-    setNowPlaying(null);
   };
 
   return {

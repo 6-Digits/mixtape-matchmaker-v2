@@ -21,6 +21,9 @@ import {
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import QueueMusicRoundedIcon from '@mui/icons-material/QueueMusicRounded';
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../state/AppDataContext';
 import MessageRow from '../components/chat/MessageRow';
@@ -47,8 +50,10 @@ function lastMessageFor(messages: ChatMessage[], matchId: string): ChatMessage |
 }
 
 const Chat: React.FC = () => {
-  const { mutualMatches, messages, sendMessage, typingMatchId, reactToMessage } = useAppData();
+  const { mutualMatches, messages, sendMessage, typingMatchId, reactToMessage, nowPlaying } = useAppData();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedMatchId, setSelectedMatchId] = useState<string | undefined>();
   const [query, setQuery] = useState('');
@@ -58,7 +63,20 @@ const Chat: React.FC = () => {
   const urlMatchId = searchParams.get('match') || undefined;
   const urlMatchIsValid = Boolean(urlMatchId && mutualMatches.some((m) => m.id === urlMatchId));
   const activeMatchId = urlMatchIsValid ? urlMatchId : selectedMatchId;
-  const activeMatch = mutualMatches.find((m) => m.id === activeMatchId) || mutualMatches[0];
+  // On desktop, default to the first match so the right pane is never empty.
+  // On mobile, only show a conversation when the user has explicitly picked one.
+  const activeMatch = isMobile
+    ? mutualMatches.find((m) => m.id === activeMatchId)
+    : mutualMatches.find((m) => m.id === activeMatchId) || mutualMatches[0];
+  const showConversation = !isMobile || Boolean(activeMatch);
+  const showSidebar = !isMobile || !activeMatch;
+
+  const clearActiveMatch = () => {
+    setSelectedMatchId(undefined);
+    const next = new URLSearchParams(searchParams);
+    next.delete('match');
+    setSearchParams(next);
+  };
   const activeMessages = useMemo(
     () => messages.filter((m) => m.matchId === activeMatch?.id),
     [messages, activeMatch?.id],
@@ -163,22 +181,24 @@ const Chat: React.FC = () => {
 
       <Paper
         sx={{
-          height: { xs: 'calc(100dvh - 156px)', md: 680 },
-          minHeight: { md: 680 },
+          height: {
+            xs: nowPlaying ? 'calc(100dvh - 280px)' : 'calc(100dvh - 168px)',
+            md: 680,
+          },
+          minHeight: { xs: 420, md: 680 },
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: '320px 1fr' },
-          gridTemplateRows: { xs: '196px minmax(0, 1fr)', md: '1fr' },
+          gridTemplateRows: '1fr',
           overflow: 'hidden',
           borderRadius: 1,
           border: 1,
           borderColor: 'divider',
         }}
       >
-        {/* Sidebar */}
+        {showSidebar && (
         <Box
           sx={{
             borderRight: { md: 1 },
-            borderBottom: { xs: 1, md: 0 },
             borderColor: 'divider',
             display: 'flex',
             flexDirection: 'column',
@@ -211,14 +231,9 @@ const Chat: React.FC = () => {
           <List
             disablePadding
             sx={{
-              overflowX: { xs: 'auto', md: 'hidden' },
-              overflowY: { xs: 'hidden', md: 'auto' },
+              overflowY: 'auto',
               flex: 1,
               minHeight: 0,
-              display: { xs: 'grid', md: 'block' },
-              gridAutoFlow: { xs: 'column', md: 'row' },
-              gridAutoColumns: { xs: 'minmax(236px, 78vw)', md: 'auto' },
-              pb: { xs: 0.5, md: 0 },
             }}
           >
             {visibleMatches.map(({ match, last }) => (
@@ -240,8 +255,9 @@ const Chat: React.FC = () => {
             )}
           </List>
         </Box>
+        )}
 
-        {/* Conversation pane */}
+        {showConversation && (
         <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
           {/* Header */}
           <Stack
@@ -256,6 +272,16 @@ const Chat: React.FC = () => {
               minWidth: 0,
             }}
           >
+            {isMobile && (
+              <IconButton
+                onClick={clearActiveMatch}
+                size="small"
+                aria-label="Back to matches"
+                sx={{ flexShrink: 0, ml: -0.5 }}
+              >
+                <ArrowBackRoundedIcon />
+              </IconButton>
+            )}
             <Badge
               overlap="circular"
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -392,6 +418,7 @@ const Chat: React.FC = () => {
             </Stack>
           </Box>
         </Box>
+        )}
       </Paper>
     </Box>
   );
@@ -419,8 +446,6 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ match, lastMessage, active, o
         gap: 1,
         alignItems: 'flex-start',
         minWidth: 0,
-        borderRadius: { xs: 1, md: 0 },
-        m: { xs: 0.75, md: 0 },
         '&.Mui-selected': { bgcolor: 'action.selected' },
       }}
     >

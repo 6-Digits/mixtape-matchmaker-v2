@@ -92,7 +92,9 @@ const Layout: React.FC = () => {
         flexDirection: 'column',
         background: pageBackground,
         color: 'text.primary',
-        pb: nowPlaying ? { xs: 14, sm: 12 } : 0,
+        pb: nowPlaying
+          ? { xs: 'calc(env(safe-area-inset-bottom, 0px) + 120px)', sm: 'calc(env(safe-area-inset-bottom, 0px) + 100px)' }
+          : 0,
       }}
     >
       <AppBar

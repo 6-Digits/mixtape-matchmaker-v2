@@ -43,6 +43,7 @@ const NowPlayingBar: React.FC<Props> = ({ nowPlaying, theme, onNext, onPrevious,
 
   return (
     <Box
+      data-testid="now-playing-bar"
       sx={{
         position: 'fixed',
         left: 0,
@@ -51,8 +52,9 @@ const NowPlayingBar: React.FC<Props> = ({ nowPlaying, theme, onNext, onPrevious,
         zIndex: theme.zIndex.appBar - 1,
         mx: 'auto',
         width: 'min(100%, 960px)',
-        px: 2,
-        py: 1.2,
+        px: { xs: 1, sm: 2 },
+        pt: { xs: 0.8, sm: 1.2 },
+        pb: 'calc(env(safe-area-inset-bottom, 0px) + 8px)',
         display: 'flex',
         flexDirection: 'column',
         gap: 0.5,
@@ -63,8 +65,8 @@ const NowPlayingBar: React.FC<Props> = ({ nowPlaying, theme, onNext, onPrevious,
         boxShadow: '0 -12px 32px rgba(0,0,0,0.18)',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <MusicNoteRoundedIcon color="primary" />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.4, sm: 1.5 }, minWidth: 0 }}>
+        <MusicNoteRoundedIcon color="primary" sx={{ display: { xs: 'none', sm: 'inline-flex' } }} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="body2" sx={{ fontWeight: 900 }} noWrap>
             {nowPlaying.loading ? 'Loading preview...' : current ? `${current.title} - ${current.artist}` : ''}
@@ -75,29 +77,34 @@ const NowPlayingBar: React.FC<Props> = ({ nowPlaying, theme, onNext, onPrevious,
         </Box>
         <Tooltip title="Previous">
           <span>
-            <IconButton onClick={onPrevious} disabled={!hasPrev && position < 3}>
+            <IconButton onClick={onPrevious} disabled={!hasPrev && position < 3} size="small" sx={{ flexShrink: 0 }}>
               <SkipPreviousRoundedIcon />
             </IconButton>
           </span>
         </Tooltip>
-        <Button variant="contained" onClick={onToggle} disabled={!nowPlaying.previewUrl || nowPlaying.loading} sx={{ minWidth: 48 }}>
+        <Button
+          variant="contained"
+          onClick={onToggle}
+          disabled={!nowPlaying.previewUrl || nowPlaying.loading}
+          sx={{ minWidth: { xs: 40, sm: 48 }, px: { xs: 1, sm: 2 }, flexShrink: 0 }}
+        >
           {nowPlaying.playing ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
         </Button>
         <Tooltip title="Next">
           <span>
-            <IconButton onClick={onNext} disabled={!hasNext}>
+            <IconButton onClick={onNext} disabled={!hasNext} size="small" sx={{ flexShrink: 0 }}>
               <SkipNextRoundedIcon />
             </IconButton>
           </span>
         </Tooltip>
         <Tooltip title="Close player">
-          <IconButton onClick={onStop}>
+          <IconButton onClick={onStop} size="small" sx={{ flexShrink: 0 }}>
             <CloseRoundedIcon />
           </IconButton>
         </Tooltip>
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, px: 0.5 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36, textAlign: 'right' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.8, sm: 1.2 }, px: 0.5 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32, textAlign: 'right' }}>
           {formatTime(position)}
         </Typography>
         <Slider
@@ -109,7 +116,7 @@ const NowPlayingBar: React.FC<Props> = ({ nowPlaying, theme, onNext, onPrevious,
           disabled={!nowPlaying.previewUrl || nowPlaying.loading || duration === 0}
           onChange={(_, value) => onSeek(Array.isArray(value) ? value[0] : value)}
         />
-        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
           {formatTime(duration)}
         </Typography>
       </Box>

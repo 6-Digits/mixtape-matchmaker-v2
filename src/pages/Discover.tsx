@@ -16,6 +16,8 @@ import {
   Paper,
   Stack,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import ChatBubbleRoundedIcon from '@mui/icons-material/ChatBubbleRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -297,10 +299,12 @@ type ProfileDialogProps = {
 };
 
 const ProfileDialog: React.FC<ProfileDialogProps> = ({ open, person, playlist, onClose, onLike, onPass, onPlay }) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   if (!person) return null;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth slotProps={{ paper: { sx: { borderRadius: 2, overflow: 'hidden' } } }}>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={fullScreen} slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: 2 }, overflow: 'hidden' } } }}>
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h5" noWrap>{person.name}</Typography>

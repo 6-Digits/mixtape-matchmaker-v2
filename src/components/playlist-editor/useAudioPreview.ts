@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { lookupPreview, type SongHit } from '../../services/musicApi';
+import { claimAudio, releaseAudio } from '../../services/audioBus';
 import { previewKeyFor, type PreviewKey, type PreviewableSong } from './preview';
 
 export function useAudioPreview(open: boolean) {
   const [previewKey, setPreviewKey] = useState<PreviewKey | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stopRef = useRef<() => void>(() => {});
 
   const stopPreview = () => {
     audioRef.current?.pause();
     audioRef.current = null;
     setPreviewKey(null);
     setPreviewLoading(false);
+    releaseAudio(stopRef.current);
   };
+  stopRef.current = stopPreview;
 
   useEffect(() => {
     if (!open) stopPreview();
@@ -41,6 +45,7 @@ export function useAudioPreview(open: boolean) {
 
       const audio = new Audio(previewUrl);
       audioRef.current = audio;
+      claimAudio(stopRef.current);
       audio.addEventListener('ended', () => {
         if (audioRef.current === audio) stopPreview();
       });

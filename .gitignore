@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+test-results
+playwright-report
 *.local
 .env
 .env.*
@@ -26,3 +28,20 @@ server/data
 *.njsproj
 *.sln
 *.sw?
+
+# Firebase
+.firebase
+.firebaserc.local
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+database-debug.log
+pubsub-debug.log
+ui-debug.log
+*-debug.log
+.runtimeconfig.json
+functions/node_modules
+functions/lib
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+
